@@ -1,632 +1,191 @@
 import SwiftUI
-import Combine
 
+/// Task 2 و Task 3
 struct ActivityView: View {
+    @State private var viewModel: ActivityViewModel
 
-    // MARK: - ViewModel
-
-    @ObservedObject var viewModel: ActivityViewModel
-
-    var onEditGoal: () -> Void
-
-    var onSetGoal: () -> Void
-
-    // MARK: - State
-
-    @State private var isCalendarExpanded = false
-
-    @State private var showActivities = false
-
-    // MARK: - Colors
-
-    private let orange = Color(
-        red: 1,
-        green: 0.53,
-        blue: 0.12
-    )
-
-    private let blue = Color(
-        red: 0.12,
-        green: 0.75,
-        blue: 0.90
-    )
-
-    // MARK: - Body
+    init(learning: LearningViewModel) {
+        _viewModel = State(initialValue: ActivityViewModel(learning: learning))
+    }
 
     var body: some View {
-
-        VStack(alignment: .leading, spacing: 0) {
-
-            // Header
-
+        VStack(spacing: 16) {
             header
+            weekStrip
 
-            // Weekly Calendar
-
-            weeklyCalendar
-
-            // Statistics
-
-            HStack(spacing: 12) {
-
-                statisticCard(
-                    icon: "flame.fill",
-                    color: orange,
-                    count: viewModel.learnedCount,
-                    title: "Learned"
-                )
-
-                statisticCard(
-                    icon: "snowflake",
-                    color: blue,
-                    count: viewModel.frozenCount,
-                    title: "Freezed"
-                )
+            HStack(spacing: 13) {
+                StatCard(icon: "flame.fill", color: .appOrange, value: viewModel.learnedText, title: "Learned")
+                StatCard(icon: "snowflake", color: .appCyan, value: viewModel.freezedText, title: "Freezed")
             }
-            .padding(.top, 12)
 
-            // Streak
-
-            Text(
-                "\(viewModel.streak) " +
-                "\(viewModel.streak == 1 ? "Day" : "Days") Streak"
-            )
-            .font(.system(size: 13))
-            .foregroundStyle(.gray)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 12)
-
-            Spacer(minLength: 15)
-
-            // Goal Result OR Learning Actions
-
-            if let result = viewModel.goalResult {
-
-                GoalResultPanel(
-                    isSuccess: result,
-                    onSetGoal: onSetGoal
-                )
-
+            if viewModel.goalState == .active {
+                logActions
             } else {
-
-                learningActions
+                goalFinished
             }
         }
-        .padding(.horizontal, 15)
-        .foregroundStyle(.white)
-        .background(.black)
-        .ignoresSafeArea(edges: .bottom)
-        .preferredColorScheme(.dark)
+        .padding(.horizontal)
+        .toolbar(.hidden, for: .navigationBar)
+    }
 
-        // MARK: - Activities Sheet
+    // MARK: - العنوان
 
-        .sheet(isPresented: $showActivities) {
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Activity")
+                    .font(.system(size: 34, weight: .bold))
+                Spacer()
+                CircleLink(icon: "calendar", route: .calendar)
+                CircleLink(icon: "pencil.and.outline", route: .goal)
+            }
 
-            ActivitiesView(
-                days: viewModel.allLearningDays(),
-                startDate: viewModel.plan?.startDate ?? Date()
-            )
-        }
-
-        // MARK: - Refresh Time
-
-        .onAppear {
-
-            viewModel.refreshClock()
-        }
-
-        .onReceive(
-            Timer.publish(
-                every: 60,
-                on: .main,
-                in: .common
-            ).autoconnect()
-        ) { _ in
-
-            viewModel.refreshClock()
+            HStack {
+                Text(viewModel.dateTitle)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Previous week", systemImage: "chevron.left", action: viewModel.previousWeek)
+                Button("Next week", systemImage: "chevron.right", action: viewModel.nextWeek)
+            }
+            .labelStyle(.iconOnly)
+            .tint(.blue)
         }
     }
 
-    // MARK: - Header
+    // MARK: - الأسبوع
 
-    private var header: some View {
-
-        HStack {
-
-            VStack(alignment: .leading, spacing: 7) {
-
-                Text("Activity")
-                    .font(.system(
-                        size: 32,
-                        weight: .bold
-                    ))
-
-                Text(
-                    viewModel.selectedDate.formatted(
-                        .dateTime
-                            .weekday(.wide)
-                            .day()
-                            .month(.wide)
-                            .locale(Locale(identifier: "en"))
-                    )
-                )
-                .font(.system(size: 16))
-                .foregroundStyle(.gray)
+    private var weekStrip: some View {
+        HStack(spacing: 0) {
+            ForEach(viewModel.weekDays, id: \.self) { day in
+                VStack(spacing: 8) {
+                    Text(day.weekdayLetter)
+                        .font(.footnote.weight(.semibold))
+                    DayCircle(day: day, style: viewModel.style(for: day), size: 44)
+                }
+                .frame(maxWidth: .infinity)
             }
+        }
+    }
+
+    // MARK: - Task 2: الأزرار
+
+    private var logActions: some View {
+        VStack {
+            Spacer()
+
+            Button(action: viewModel.logAsLearned) {
+                Text(viewModel.logButtonTitle)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(viewModel.isLearnedToday ? .secondary : .primary)
+                    .frame(width: 274, height: 274)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.tint(viewModel.isLearnedToday ? Color(white: 0.12) : .appOrange).interactive(),
+                         in: .circle)
+            .disabled(!viewModel.canLogLearned)
 
             Spacer()
 
-            // Previous Activities
+            VStack(spacing: 16) {
+                Button(action: viewModel.freezeDay) {
+                    Text(viewModel.freezeButtonTitle)
+                        .foregroundStyle(viewModel.canFreeze ? .white : .secondary)
+                        .frame(width: 274, height: 48)
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.tint(viewModel.canFreeze ? Color.appCyan : nil).interactive(),
+                             in: .capsule)
+                .disabled(!viewModel.canFreeze)
 
-            Button {
-
-                showActivities = true
-
-            } label: {
-
-                headerIcon("calendar")
+                Text(viewModel.freezesText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
-            .accessibilityLabel("Previous Activities")
-
-            // Edit Goal
-
-            Button {
-
-                onEditGoal()
-
-            } label: {
-
-                headerIcon("pencil.tip.crop.circle")
-            }
-            .accessibilityLabel("Change Learning Goal")
+            .padding(.bottom, 24)
         }
-        .padding(.top, 10)
     }
 
-    // MARK: - Header Icon Component
+    // MARK: - Task 3: نهاية الهدف
 
-    private func headerIcon(
-        _ icon: String
-    ) -> some View {
-
-        Image(systemName: icon)
-            .font(.system(size: 20))
-            .foregroundStyle(.white)
-            .frame(width: 45, height: 45)
-            .background(
-                Color(white: 0.12),
-                in: Circle()
-            )
-    }
-
-    // MARK: - Weekly / Monthly Calendar
-
-    private let weekdaySymbols = ["S", "M", "T", "W", "T", "F", "S"]
-
-    private var calendarRows: [[Date?]] {
-
-        isCalendarExpanded
-        ? viewModel.monthWeeks
-        : [viewModel.weekDates.map { Optional($0) }]
-    }
-
-    private var weeklyCalendar: some View {
-
+    private var goalFinished: some View {
         VStack(spacing: 8) {
+            Spacer()
 
-            // Weekday Names
+            Image(systemName: viewModel.finishedIcon)
+                .font(.system(size: 40))
+                .foregroundStyle(viewModel.isGoalCompleted ? Color.yellow : Color.appOrange)
+                .padding(.bottom, 8)
 
-            HStack(spacing: 0) {
+            Text(viewModel.finishedTitle)
+                .font(.headline)
+            Text(viewModel.finishedSubtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
 
-                ForEach(
-                    Array(weekdaySymbols.enumerated()),
-                    id: \.offset
-                ) { _, symbol in
-
-                    Text(symbol)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                }
+            NavigationLink(value: Route.goal) {
+                Label("Set a goal", systemImage: "pencil.and.outline")
+                    .frame(height: 36)
+                    .padding(.horizontal, 8)
             }
+            .buttonStyle(.glassProminent)
+            .padding(.top, 40)
 
-            // Rows
-
-            ForEach(
-                Array(calendarRows.enumerated()),
-                id: \.offset
-            ) { _, row in
-
-                HStack(spacing: 0) {
-
-                    ForEach(
-                        Array(row.enumerated()),
-                        id: \.offset
-                    ) { _, date in
-
-                        dayCell(date)
-                    }
-                }
-            }
-        }
-        .padding(.top, 20)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 20)
-                .onEnded { value in
-
-                    let horizontal = value.translation.width
-                    let vertical = value.translation.height
-
-                    if abs(vertical) > abs(horizontal) {
-
-                        // سحب لتحت = فتح الشهر / سحب لفوق = رجوع للأسبوع
-
-                        withAnimation(.easeInOut(duration: 0.25)) {
-
-                            if vertical > 30 {
-                                isCalendarExpanded = true
-                            } else if vertical < -30 {
-                                isCalendarExpanded = false
-                            }
-                        }
-
-                    } else if abs(horizontal) > 40 {
-
-                        // سحب يمين/يسار = الأسبوع أو الشهر السابق/التالي
-
-                        let step = horizontal < 0 ? 1 : -1
-
-                        withAnimation(.easeInOut(duration: 0.25)) {
-
-                            viewModel.moveSelectedDate(
-                                isCalendarExpanded
-                                ? .month
-                                : .weekOfYear,
-                                by: step
-                            )
-                        }
-                    }
-                }
-        )
-    }
-
-    // MARK: - Day Cell
-
-    @ViewBuilder
-    private func dayCell(_ date: Date?) -> some View {
-
-        if let date {
-
-            Button {
-
-                viewModel.selectedDate = date
-
-            } label: {
-
-                Text(
-                    date.formatted(.dateTime.day())
-                )
-                .font(.system(size: 18))
-                .foregroundStyle(dayTextColor(date))
-                .frame(width: 44, height: 44)
-                .background {
-
-                    Circle()
-                        .fill(dayBackground(date))
-                }
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity)
-
-        } else {
-
-            Color.clear
-                .frame(width: 44, height: 44)
-                .frame(maxWidth: .infinity)
+            Spacer()
+            Spacer()
         }
     }
+}
 
-    // MARK: - Day Background
+// MARK: - قطع صغيرة
 
-    private func dayBackground(
-        _ date: Date
-    ) -> Color {
+struct CircleLink: View {
+    let icon: String
+    let route: Route
 
-        // اليوم المحدد: دائرة برتقالية صريحة
-
-        if viewModel.isSelected(date) {
-            return orange
-        }
-
-        switch viewModel.days[
-            Calendar.current.startOfDay(for: date)
-        ]?.status {
-
-        case .learned:
-            return orange.opacity(0.18)
-
-        case .frozen:
-            return blue.opacity(0.18)
-
-        case nil:
-            return .clear
-        }
-    }
-
-    // MARK: - Day Text Color
-
-    private func dayTextColor(
-        _ date: Date
-    ) -> Color {
-
-        // اليوم المحدد: رقم أبيض
-
-        if viewModel.isSelected(date) {
-            return .white
-        }
-
-        switch viewModel.days[
-            Calendar.current.startOfDay(for: date)
-        ]?.status {
-
-        case .learned:
-            return orange
-
-        case .frozen:
-            return blue
-
-        case nil:
-            return .white
-        }
-    }
-
-    // MARK: - Statistic Card Component
-
-    private func statisticCard(
-        icon: String,
-        color: Color,
-        count: Int,
-        title: String
-    ) -> some View {
-
-        VStack(spacing: 8) {
-
+    var body: some View {
+        NavigationLink(value: route) {
             Image(systemName: icon)
-                .font(.system(size: 19))
+                .font(.title3)
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+        }
+        .glassEffect(.regular.interactive(), in: .circle)
+    }
+}
+
+struct StatCard: View {
+    let icon: String
+    let color: Color
+    let value: String
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.title3)
                 .foregroundStyle(color)
-
-            Text(
-                "\(count) \(count == 1 ? "Day" : "Days")"
-            )
-            .font(.system(
-                size: 16,
-                weight: .semibold
-            ))
-
+            Text(value)
+                .font(.headline)
             Text(title)
-                .font(.system(size: 12))
+                .font(.caption)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 100)
-        .background(
-            Color(white: 0.10),
-            in: RoundedRectangle(cornerRadius: 35)
-        )
-        .overlay {
-
-            RoundedRectangle(cornerRadius: 35)
-                .stroke(
-                    .gray.opacity(0.3),
-                    lineWidth: 1
-                )
-        }
-    }
-
-    // MARK: - Learning Actions
-
-    private var learningActions: some View {
-
-        VStack(spacing: 0) {
-
-            // Log as Learned
-
-            Button {
-
-                viewModel.logLearned()
-
-            } label: {
-
-                Text(learnedButtonTitle)
-                    .font(.system(
-                        size: 16,
-                        weight: .bold
-                    ))
-                    .foregroundStyle(.white.opacity(
-                        viewModel.canLogLearned ? 1 : 0.35
-                    ))
-                    .frame(width: 270, height: 270)
-                    .background {
-
-                        if viewModel.canLogLearned {
-
-                            Circle()
-                                .fill(orange)
-
-                        } else {
-
-                            Circle()
-                                .fill(.ultraThinMaterial)
-                                .overlay {
-
-                                    Circle()
-                                        .stroke(
-                                            .white.opacity(0.15),
-                                            lineWidth: 1
-                                        )
-                                }
-                        }
-                    }
-            }
-            .disabled(!viewModel.canLogLearned)
-            .frame(maxWidth: .infinity)
-
-            Spacer()
-                .frame(height: 35)
-
-            // Freeze Button
-
-            Button {
-
-                viewModel.freezeDay()
-
-            } label: {
-
-                Text(freezeButtonTitle)
-                    .font(.system(
-                        size: 16,
-                        weight: .medium
-                    ))
-                    .foregroundStyle(.white.opacity(
-                        viewModel.canFreeze ? 1 : 0.35
-                    ))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 46)
-                    .background {
-
-                        if viewModel.canFreeze {
-
-                            blue
-
-                        } else {
-
-                            Color(white: 0.10)
-                        }
-                    }
-                    .clipShape(Capsule())
-            }
-            .disabled(!viewModel.canFreeze)
-
-            // Freeze Usage
-
-            Text(
-                "\(viewModel.frozenCount) out of " +
-                "\(viewModel.maxFreezes) Freezes used"
-            )
-            .font(.system(size: 14))
-            .foregroundStyle(.gray)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 14)
-            .padding(.bottom, 15)
-        }
-    }
-
-    // MARK: - Button Titles
-
-    private var learnedButtonTitle: String {
-
-        switch viewModel.selectedDayStatus {
-
-        case .learned:
-            return "Logged as Learned"
-
-        case .frozen:
-            return "Frozen for a day"
-
-        case nil:
-            return "Log as Learned"
-        }
-    }
-
-    private var freezeButtonTitle: String {
-
-        switch viewModel.selectedDayStatus {
-
-        case .learned:
-            return "Logged as Learned"
-
-        case .frozen:
-            return "Frozen for a day"
-
-        case nil:
-            return "Freeze for a day"
-        }
+        .glassEffect(in: .rect(cornerRadius: 34))
     }
 }
 
-// MARK: - Goal Result Component
-
-private struct GoalResultPanel: View {
-
-    let isSuccess: Bool
-
-    let onSetGoal: () -> Void
-
-    private let orange = Color(
-        red: 1,
-        green: 0.53,
-        blue: 0.12
-    )
+/// دائرة اليوم — تُستخدم هنا وفي التقويم (بدون تفاعل)
+struct DayCircle: View {
+    let day: Date
+    let style: DayStyle
+    let size: CGFloat
 
     var body: some View {
-
-        VStack(spacing: 0) {
-
-            Image(
-                systemName: isSuccess
-                ? "hands.clap.fill"
-                : "xmark.seal.fill"
-            )
-            .font(.system(size: 45))
-            .foregroundStyle(
-                isSuccess ? .yellow : orange
-            )
-
-            Text(
-                isSuccess
-                ? "Will done!"
-                : "You didn't reach your goal this time."
-            )
-            .font(.system(size: 17, weight: .bold))
-            .multilineTextAlignment(.center)
-            .padding(.top, 20)
-
-            Text(
-                isSuccess
-                ? "Ready for your next goal?"
-                : "Want to set another goal?"
-            )
-            .font(.system(size: 14))
-            .foregroundStyle(.gray)
-            .padding(.top, 8)
-
-            Button {
-
-                onSetGoal()
-
-            } label: {
-
-                HStack(spacing: 8) {
-
-                    Image(systemName: "pencil.circle")
-
-                    Text("Set a goal")
-                }
-                .font(.system(size: 16))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 22)
-                .frame(height: 48)
-                .background(orange)
-                .clipShape(Capsule())
-            }
-            .padding(.top, 65)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.bottom, 40)
+        Text(day.dayNumber)
+            .font(.system(size: size * 0.45, weight: style == .today ? .bold : .medium))
+            .foregroundStyle(style.textColor)
+            .frame(width: size, height: size)
+            .background(Circle().fill(style.background))
     }
-}
-
-#Preview {
-
-    ContentView()
 }

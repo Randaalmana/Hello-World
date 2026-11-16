@@ -1,9 +1,15 @@
 import SwiftUI
 
-@main struct MyApp: App {
+@main
+struct LearningAppApp: App {
+    @State private var learning = LearningViewModel()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(learning)
+                .preferredColorScheme(.dark)
+                .tint(.appOrange)
         }
     }
 }

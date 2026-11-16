@@ -1,119 +1,30 @@
-
 import Foundation
-import Combine
 
-final class ActivitiesViewModel: ObservableObject {
+/// منطق شاشة التقويم (عرض فقط)
+@Observable
+final class ActivitiesViewModel {
+    let learning: LearningViewModel
+    let weekdaySymbols = Calendar.app.shortWeekdaySymbols.map { $0.uppercased() }   // SUN MON ...
 
-    private var calendar: Calendar
-
-    init(calendar: Calendar = .current) {
-
-        var configuredCalendar = calendar
-
-        configuredCalendar.firstWeekday = 1
-
-        self.calendar = configuredCalendar
+    init(learning: LearningViewModel) {
+        self.learning = learning
     }
 
-    // MARK: - Get All Months
-
-    func months(
-        from startDate: Date,
-        through endDate: Date = Date()
-    ) -> [Date] {
-
-        let start = calendar.date(
-            from: calendar.dateComponents(
-                [.year, .month],
-                from: startDate
-            )
-        )!
-
-        let end = calendar.date(
-            from: calendar.dateComponents(
-                [.year, .month],
-                from: endDate
-            )
-        )!
+    /// كل الشهور من أول يوم مسجّل إلى الشهر الحالي
+    var months: [Date] {
+        let calendar = Calendar.app
+        let firstDay = learning.firstRecordDate ?? learning.now
+        guard var month = calendar.dateInterval(of: .month, for: firstDay)?.start else { return [] }
 
         var result: [Date] = []
-
-        var current = start
-
-        while current <= end {
-
-            result.append(current)
-
-            guard let next = calendar.date(
-                byAdding: .month,
-                value: 1,
-                to: current
-            ) else {
-                break
-            }
-
-            current = next
+        while month <= learning.now {
+            result.append(month)
+            month = calendar.date(byAdding: .month, value: 1, to: month)!
         }
-
         return result
     }
 
-    // MARK: - Number of Days
-
-    func numberOfDays(in month: Date) -> Int {
-
-        calendar.range(
-            of: .day,
-            in: .month,
-            for: month
-        )?.count ?? 30
-    }
-
-    // MARK: - First Weekday Offset
-
-    func firstWeekdayOffset(for month: Date) -> Int {
-
-        let weekday = calendar.component(
-            .weekday,
-            from: month
-        )
-
-        return weekday - 1
-    }
-
-    // MARK: - Create Date
-
-    func date(
-        for day: Int,
-        in month: Date
-    ) -> Date? {
-
-        calendar.date(
-            byAdding: .day,
-            value: day - 1,
-            to: month
-        )
-    }
-
-    // MARK: - Get Day Status
-
-    func status(
-        for date: Date,
-        days: [LearningDay]
-    ) -> LearningDayStatus? {
-
-        let selectedDate = calendar.startOfDay(
-            for: date
-        )
-
-        return days.first {
-
-            calendar.isDate(
-                $0.date,
-                inSameDayAs: selectedDate
-            )
-
-        }?.status
-    }
+    func title(for month: Date) -> String { month.monthTitle }
+    func days(in month: Date) -> [Date?] { Calendar.app.monthGrid(for: month) }
+    func style(for day: Date) -> DayStyle { learning.style(for: day) }
 }
-
