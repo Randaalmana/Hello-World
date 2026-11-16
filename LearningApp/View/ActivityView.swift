@@ -1,18 +1,23 @@
-//
-//  Untitled.swift
-//  MyApp
-//
-//  Created by Randa Alqahtani on 01/06/1448 AH.
-//
-
-
 import SwiftUI
+import Combine
 
 struct ActivityView: View {
 
-    @StateObject private var viewModel: ActivityViewModel
+    // MARK: - ViewModel
 
-    private let isGlass: Bool
+    @ObservedObject var viewModel: ActivityViewModel
+
+    var onEditGoal: () -> Void
+
+    var onSetGoal: () -> Void
+
+    // MARK: - State
+
+    @State private var isCalendarExpanded = false
+
+    @State private var showActivities = false
+
+    // MARK: - Colors
 
     private let orange = Color(
         red: 1,
@@ -26,77 +31,32 @@ struct ActivityView: View {
         blue: 0.90
     )
 
-    init(
-        initialLearnedCount: Int = 0,
-        isGlass: Bool = false
-    ) {
-
-        _viewModel = StateObject(
-            wrappedValue: ActivityViewModel(
-                initialLearnedCount: initialLearnedCount
-            )
-        )
-
-        self.isGlass = isGlass
-    }
+    // MARK: - Body
 
     var body: some View {
 
         VStack(alignment: .leading, spacing: 0) {
 
             // Header
-            HStack {
 
-                VStack(alignment: .leading, spacing: 7) {
-
-                    Text("Activity")
-                        .font(.system(size: 32, weight: .bold))
-
-                    Text(viewModel.selectedDate.formatted(
-                        .dateTime.weekday(.wide)
-                            .day()
-                            .month(.wide)
-                            .locale(Locale(identifier: "en"))
-                    ))
-                    .font(.system(size: 16))
-                    .foregroundStyle(.gray)
-                }
-
-                Spacer()
-
-                IconButtonView(icon: "calendar") {
-                    viewModel.showCalendar = true
-                }
-
-                IconButtonView(icon: "timer") {
-                    // Timer action
-                }
-            }
-            .padding(.top, 10)
+            header
 
             // Weekly Calendar
-            WeekCalendarView(
-                dates: viewModel.weekDates,
-                selectedDate: viewModel.selectedDate,
-                learnedDates: viewModel.learnedDates,
-                frozenDates: viewModel.frozenDates
-            ) { date in
 
-                viewModel.selectedDate = date
-            }
-            .padding(.top, 20)
+            weeklyCalendar
 
             // Statistics
+
             HStack(spacing: 12) {
 
-                StatisticCardView(
+                statisticCard(
                     icon: "flame.fill",
                     color: orange,
                     count: viewModel.learnedCount,
                     title: "Learned"
                 )
 
-                StatisticCardView(
+                statisticCard(
                     icon: "snowflake",
                     color: blue,
                     count: viewModel.frozenCount,
@@ -105,105 +65,330 @@ struct ActivityView: View {
             }
             .padding(.top, 12)
 
-            Spacer()
+            // Streak
 
-            // Log as Learned
-            LearningActionButton(isGlass: isGlass) {
-
-                viewModel.logLearned()
-            }
+            Text(
+                "\(viewModel.streak) " +
+                "\(viewModel.streak == 1 ? "Day" : "Days") Streak"
+            )
+            .font(.system(size: 13))
+            .foregroundStyle(.gray)
             .frame(maxWidth: .infinity)
+            .padding(.top, 12)
 
-            Spacer()
+            Spacer(minLength: 15)
 
-            // Freeze Button
-            Button {
+            // Goal Result OR Learning Actions
 
-                viewModel.freezeDay()
+            if let result = viewModel.goalResult {
 
-            } label: {
+                GoalResultPanel(
+                    isSuccess: result,
+                    onSetGoal: onSetGoal
+                )
 
-                Text("Freeze for a day")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 46)
-                    .background(blue)
-                    .clipShape(Capsule())
+            } else {
+
+                learningActions
             }
-            .disabled(!viewModel.canFreeze)
-            .opacity(viewModel.canFreeze ? 1 : 0.5)
-
-            Text("\(viewModel.frozenCount) out of 2 Freezes used")
-                .font(.system(size: 14))
-                .foregroundStyle(.gray)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 14)
-                .padding(.bottom, 15)
         }
         .padding(.horizontal, 15)
         .foregroundStyle(.white)
         .background(.black)
         .ignoresSafeArea(edges: .bottom)
-
-        // Calendar Sheet
-        .sheet(isPresented: $viewModel.showCalendar) {
-
-            DatePicker(
-                "Select Date",
-                selection: $viewModel.selectedDate,
-                in: ...Date(),
-                displayedComponents: .date
-            )
-            .datePickerStyle(.graphical)
-            .tint(orange)
-            .padding()
-            .preferredColorScheme(.dark)
-            .presentationDetents([.medium, .large])
-        }
         .preferredColorScheme(.dark)
-    }
-}
 
-// MARK: - Icon Button
+        // MARK: - Activities Sheet
 
-private struct IconButtonView: View {
+        .sheet(isPresented: $showActivities) {
 
-    let icon: String
+            ActivitiesView(
+                days: viewModel.allLearningDays(),
+                startDate: viewModel.plan?.startDate ?? Date()
+            )
+        }
 
-    let action: () -> Void
+        // MARK: - Refresh Time
 
-    var body: some View {
+        .onAppear {
 
-        Button {
-            action()
-        } label: {
+            viewModel.refreshClock()
+        }
 
-            Image(systemName: icon)
-                .font(.system(size: 20))
-                .foregroundStyle(.white)
-                .frame(width: 45, height: 45)
-                .background(
-                    Color(white: 0.12),
-                    in: Circle()
-                )
+        .onReceive(
+            Timer.publish(
+                every: 60,
+                on: .main,
+                in: .common
+            ).autoconnect()
+        ) { _ in
+
+            viewModel.refreshClock()
         }
     }
-}
 
-// MARK: - Statistic Card
+    // MARK: - Header
 
-private struct StatisticCardView: View {
+    private var header: some View {
 
-    let icon: String
+        HStack {
 
-    let color: Color
+            VStack(alignment: .leading, spacing: 7) {
 
-    let count: Int
+                Text("Activity")
+                    .font(.system(
+                        size: 32,
+                        weight: .bold
+                    ))
 
-    let title: String
+                Text(
+                    viewModel.selectedDate.formatted(
+                        .dateTime
+                            .weekday(.wide)
+                            .day()
+                            .month(.wide)
+                            .locale(Locale(identifier: "en"))
+                    )
+                )
+                .font(.system(size: 16))
+                .foregroundStyle(.gray)
+            }
 
-    var body: some View {
+            Spacer()
+
+            // Previous Activities
+
+            Button {
+
+                showActivities = true
+
+            } label: {
+
+                headerIcon("calendar")
+            }
+            .accessibilityLabel("Previous Activities")
+
+            // Edit Goal
+
+            Button {
+
+                onEditGoal()
+
+            } label: {
+
+                headerIcon("pencil.tip.crop.circle")
+            }
+            .accessibilityLabel("Change Learning Goal")
+        }
+        .padding(.top, 10)
+    }
+
+    // MARK: - Header Icon Component
+
+    private func headerIcon(
+        _ icon: String
+    ) -> some View {
+
+        Image(systemName: icon)
+            .font(.system(size: 20))
+            .foregroundStyle(.white)
+            .frame(width: 45, height: 45)
+            .background(
+                Color(white: 0.12),
+                in: Circle()
+            )
+    }
+
+    // MARK: - Weekly / Monthly Calendar
+
+    private let weekdaySymbols = ["S", "M", "T", "W", "T", "F", "S"]
+
+    private var calendarRows: [[Date?]] {
+
+        isCalendarExpanded
+        ? viewModel.monthWeeks
+        : [viewModel.weekDates.map { Optional($0) }]
+    }
+
+    private var weeklyCalendar: some View {
+
+        VStack(spacing: 8) {
+
+            // Weekday Names
+
+            HStack(spacing: 0) {
+
+                ForEach(
+                    Array(weekdaySymbols.enumerated()),
+                    id: \.offset
+                ) { _, symbol in
+
+                    Text(symbol)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+
+            // Rows
+
+            ForEach(
+                Array(calendarRows.enumerated()),
+                id: \.offset
+            ) { _, row in
+
+                HStack(spacing: 0) {
+
+                    ForEach(
+                        Array(row.enumerated()),
+                        id: \.offset
+                    ) { _, date in
+
+                        dayCell(date)
+                    }
+                }
+            }
+        }
+        .padding(.top, 20)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onEnded { value in
+
+                    let horizontal = value.translation.width
+                    let vertical = value.translation.height
+
+                    if abs(vertical) > abs(horizontal) {
+
+                        // سحب لتحت = فتح الشهر / سحب لفوق = رجوع للأسبوع
+
+                        withAnimation(.easeInOut(duration: 0.25)) {
+
+                            if vertical > 30 {
+                                isCalendarExpanded = true
+                            } else if vertical < -30 {
+                                isCalendarExpanded = false
+                            }
+                        }
+
+                    } else if abs(horizontal) > 40 {
+
+                        // سحب يمين/يسار = الأسبوع أو الشهر السابق/التالي
+
+                        let step = horizontal < 0 ? 1 : -1
+
+                        withAnimation(.easeInOut(duration: 0.25)) {
+
+                            viewModel.moveSelectedDate(
+                                isCalendarExpanded
+                                ? .month
+                                : .weekOfYear,
+                                by: step
+                            )
+                        }
+                    }
+                }
+        )
+    }
+
+    // MARK: - Day Cell
+
+    @ViewBuilder
+    private func dayCell(_ date: Date?) -> some View {
+
+        if let date {
+
+            Button {
+
+                viewModel.selectedDate = date
+
+            } label: {
+
+                Text(
+                    date.formatted(.dateTime.day())
+                )
+                .font(.system(size: 18))
+                .foregroundStyle(dayTextColor(date))
+                .frame(width: 44, height: 44)
+                .background {
+
+                    Circle()
+                        .fill(dayBackground(date))
+                }
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+
+        } else {
+
+            Color.clear
+                .frame(width: 44, height: 44)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    // MARK: - Day Background
+
+    private func dayBackground(
+        _ date: Date
+    ) -> Color {
+
+        // اليوم المحدد: دائرة برتقالية صريحة
+
+        if viewModel.isSelected(date) {
+            return orange
+        }
+
+        switch viewModel.days[
+            Calendar.current.startOfDay(for: date)
+        ]?.status {
+
+        case .learned:
+            return orange.opacity(0.18)
+
+        case .frozen:
+            return blue.opacity(0.18)
+
+        case nil:
+            return .clear
+        }
+    }
+
+    // MARK: - Day Text Color
+
+    private func dayTextColor(
+        _ date: Date
+    ) -> Color {
+
+        // اليوم المحدد: رقم أبيض
+
+        if viewModel.isSelected(date) {
+            return .white
+        }
+
+        switch viewModel.days[
+            Calendar.current.startOfDay(for: date)
+        ]?.status {
+
+        case .learned:
+            return orange
+
+        case .frozen:
+            return blue
+
+        case nil:
+            return .white
+        }
+    }
+
+    // MARK: - Statistic Card Component
+
+    private func statisticCard(
+        icon: String,
+        color: Color,
+        count: Int,
+        title: String
+    ) -> some View {
 
         VStack(spacing: 8) {
 
@@ -211,8 +396,13 @@ private struct StatisticCardView: View {
                 .font(.system(size: 19))
                 .foregroundStyle(color)
 
-            Text("\(count) days")
-                .font(.system(size: 16, weight: .semibold))
+            Text(
+                "\(count) \(count == 1 ? "Day" : "Days")"
+            )
+            .font(.system(
+                size: 16,
+                weight: .semibold
+            ))
 
             Text(title)
                 .font(.system(size: 12))
@@ -226,100 +416,151 @@ private struct StatisticCardView: View {
         .overlay {
 
             RoundedRectangle(cornerRadius: 35)
-                .stroke(.gray.opacity(0.3), lineWidth: 1)
+                .stroke(
+                    .gray.opacity(0.3),
+                    lineWidth: 1
+                )
         }
     }
-}
 
-// MARK: - Weekly Calendar
+    // MARK: - Learning Actions
 
-private struct WeekCalendarView: View {
+    private var learningActions: some View {
 
-    let dates: [Date]
+        VStack(spacing: 0) {
 
-    let selectedDate: Date
+            // Log as Learned
 
-    let learnedDates: Set<Date>
+            Button {
 
-    let frozenDates: Set<Date>
+                viewModel.logLearned()
 
-    let selectDate: (Date) -> Void
+            } label: {
 
-    private let calendar = Calendar.current
-
-    private let orange = Color(
-        red: 1,
-        green: 0.53,
-        blue: 0.12
-    )
-
-    private let blue = Color(
-        red: 0.12,
-        green: 0.75,
-        blue: 0.90
-    )
-
-    var body: some View {
-
-        HStack(spacing: 0) {
-
-            ForEach(dates, id: \.self) { date in
-
-                VStack(spacing: 8) {
-
-                    Text(date.formatted(
-                        .dateTime.weekday(.narrow)
+                Text(learnedButtonTitle)
+                    .font(.system(
+                        size: 16,
+                        weight: .bold
                     ))
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.white.opacity(
+                        viewModel.canLogLearned ? 1 : 0.35
+                    ))
+                    .frame(width: 270, height: 270)
+                    .background {
 
-                    Button {
+                        if viewModel.canLogLearned {
 
-                        selectDate(date)
+                            Circle()
+                                .fill(orange)
 
-                    } label: {
+                        } else {
 
-                        Text(date.formatted(.dateTime.day()))
-                            .font(.system(size: 18))
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
-                            .background {
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .overlay {
 
-                                if calendar.isDate(
-                                    date,
-                                    inSameDayAs: selectedDate
-                                ) {
-
-                                    Circle().fill(orange)
-
-                                } else if frozenDates.contains(
-                                    calendar.startOfDay(for: date)
-                                ) {
-
-                                    Circle().fill(blue.opacity(0.25))
-
-                                } else if learnedDates.contains(
-                                    calendar.startOfDay(for: date)
-                                ) {
-
-                                    Circle().fill(orange.opacity(0.5))
+                                    Circle()
+                                        .stroke(
+                                            .white.opacity(0.15),
+                                            lineWidth: 1
+                                        )
                                 }
-                            }
+                        }
                     }
-                }
-                .frame(maxWidth: .infinity)
             }
+            .disabled(!viewModel.canLogLearned)
+            .frame(maxWidth: .infinity)
+
+            Spacer()
+                .frame(height: 35)
+
+            // Freeze Button
+
+            Button {
+
+                viewModel.freezeDay()
+
+            } label: {
+
+                Text(freezeButtonTitle)
+                    .font(.system(
+                        size: 16,
+                        weight: .medium
+                    ))
+                    .foregroundStyle(.white.opacity(
+                        viewModel.canFreeze ? 1 : 0.35
+                    ))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                    .background {
+
+                        if viewModel.canFreeze {
+
+                            blue
+
+                        } else {
+
+                            Color(white: 0.10)
+                        }
+                    }
+                    .clipShape(Capsule())
+            }
+            .disabled(!viewModel.canFreeze)
+
+            // Freeze Usage
+
+            Text(
+                "\(viewModel.frozenCount) out of " +
+                "\(viewModel.maxFreezes) Freezes used"
+            )
+            .font(.system(size: 14))
+            .foregroundStyle(.gray)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 14)
+            .padding(.bottom, 15)
+        }
+    }
+
+    // MARK: - Button Titles
+
+    private var learnedButtonTitle: String {
+
+        switch viewModel.selectedDayStatus {
+
+        case .learned:
+            return "Logged as Learned"
+
+        case .frozen:
+            return "Frozen for a day"
+
+        case nil:
+            return "Log as Learned"
+        }
+    }
+
+    private var freezeButtonTitle: String {
+
+        switch viewModel.selectedDayStatus {
+
+        case .learned:
+            return "Logged as Learned"
+
+        case .frozen:
+            return "Frozen for a day"
+
+        case nil:
+            return "Freeze for a day"
         }
     }
 }
 
-// MARK: - Learning Action Button
+// MARK: - Goal Result Component
 
-private struct LearningActionButton: View {
+private struct GoalResultPanel: View {
 
-    let isGlass: Bool
+    let isSuccess: Bool
 
-    let action: () -> Void
+    let onSetGoal: () -> Void
 
     private let orange = Color(
         red: 1,
@@ -329,48 +570,63 @@ private struct LearningActionButton: View {
 
     var body: some View {
 
-        Button {
+        VStack(spacing: 0) {
 
-            action()
+            Image(
+                systemName: isSuccess
+                ? "hands.clap.fill"
+                : "xmark.seal.fill"
+            )
+            .font(.system(size: 45))
+            .foregroundStyle(
+                isSuccess ? .yellow : orange
+            )
 
-        } label: {
+            Text(
+                isSuccess
+                ? "Will done!"
+                : "You didn't reach your goal this time."
+            )
+            .font(.system(size: 17, weight: .bold))
+            .multilineTextAlignment(.center)
+            .padding(.top, 20)
 
-            Text("Log as Learned")
-                .font(.system(size: 16, weight: .bold))
+            Text(
+                isSuccess
+                ? "Ready for your next goal?"
+                : "Want to set another goal?"
+            )
+            .font(.system(size: 14))
+            .foregroundStyle(.gray)
+            .padding(.top, 8)
+
+            Button {
+
+                onSetGoal()
+
+            } label: {
+
+                HStack(spacing: 8) {
+
+                    Image(systemName: "pencil.circle")
+
+                    Text("Set a goal")
+                }
+                .font(.system(size: 16))
                 .foregroundStyle(.white)
-                .frame(width: 270, height: 270)
-                .background {
-
-                    if isGlass {
-
-                        Circle()
-                            .fill(.ultraThinMaterial)
-
-                    } else {
-
-                        Circle()
-                            .fill(orange)
-                    }
-                }
-                .overlay {
-
-                    Circle()
-                        .stroke(
-                            .white.opacity(0.35),
-                            lineWidth: isGlass ? 1 : 0
-                        )
-                }
+                .padding(.horizontal, 22)
+                .frame(height: 48)
+                .background(orange)
+                .clipShape(Capsule())
+            }
+            .padding(.top, 65)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 40)
     }
 }
 
 #Preview {
-    ActivityView()
-}
 
-#Preview("Glass Version") {
-    ActivityView(
-        initialLearnedCount: 5,
-        isGlass: true
-    )
+    ContentView()
 }
