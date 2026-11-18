@@ -5,26 +5,37 @@ import Foundation
 final class ActivitiesViewModel {
     let learning: LearningViewModel
     let weekdaySymbols = Calendar.app.shortWeekdaySymbols.map { $0.uppercased() }   // SUN MON ...
+    private let calendar = Calendar.app
 
     init(learning: LearningViewModel) {
         self.learning = learning
     }
 
-    /// كل الشهور من أول يوم مسجّل إلى الشهر الحالي
+    /// السنة كاملة (يناير → ديسمبر)، ولو فيه أيام من سنة قبل نعرضها بعد
     var months: [Date] {
-        let calendar = Calendar.app
-        let firstDay = learning.firstRecordDate ?? learning.now
-        guard var month = calendar.dateInterval(of: .month, for: firstDay)?.start else { return [] }
+        let thisYear = calendar.component(.year, from: learning.now)
+        var firstYear = thisYear
+        if let firstDay = learning.firstRecordDate {
+            firstYear = min(thisYear, calendar.component(.year, from: firstDay))
+        }
 
         var result: [Date] = []
-        while month <= learning.now {
-            result.append(month)
-            month = calendar.date(byAdding: .month, value: 1, to: month)!
+        for year in firstYear...thisYear {
+            for month in 1...12 {
+                if let date = calendar.date(from: DateComponents(year: year, month: month, day: 1)) {
+                    result.append(date)
+                }
+            }
         }
         return result
     }
 
+    /// الشهر الحالي (التقويم يفتح عليه)
+    var currentMonth: Date {
+        calendar.dateInterval(of: .month, for: learning.now)!.start
+    }
+
     func title(for month: Date) -> String { month.monthTitle }
-    func days(in month: Date) -> [Date?] { Calendar.app.monthGrid(for: month) }
+    func cells(in month: Date) -> [CalendarCell] { calendar.monthCells(for: month) }
     func style(for day: Date) -> DayStyle { learning.style(for: day) }
 }

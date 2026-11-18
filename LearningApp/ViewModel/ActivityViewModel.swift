@@ -4,7 +4,8 @@ import Foundation
 @Observable
 final class ActivityViewModel {
     let learning: LearningViewModel
-    private(set) var weekOffset = 0
+    var isConfirmingFreeze = false     // تنبيه Freeze today?
+    var isConfirmingContinue = false   // تنبيه Continue learning?
 
     init(learning: LearningViewModel) {
         self.learning = learning
@@ -13,20 +14,18 @@ final class ActivityViewModel {
     // MARK: - العنوان والأسبوع
 
     var dateTitle: String { learning.now.headerTitle }
-
-    var weekDays: [Date] {
-        let date = Calendar.app.date(byAdding: .weekOfYear, value: weekOffset, to: learning.now)!
-        return Calendar.app.weekDays(containing: date)
-    }
+    var weekDays: [Date] { Calendar.app.weekDays(containing: learning.now) }
 
     func style(for day: Date) -> DayStyle { learning.style(for: day) }
-    func previousWeek() { weekOffset -= 1 }
-    func nextWeek() { weekOffset += 1 }
+
+    /// السهم → شاشة Hello Learner
+    func backToStart() { learning.backToStart() }
 
     // MARK: - البطاقات
 
     var learnedText: String { learning.learnedCount.daysText }
     var freezedText: String { learning.freezedCount.daysText }
+    var isStreakLost: Bool { learning.isStreakLost }
 
     // MARK: - الأزرار
 
@@ -36,13 +35,47 @@ final class ActivityViewModel {
     var canFreeze: Bool { learning.canFreeze }
 
     var logButtonTitle: String { isLearnedToday ? "Logged as Learned" : "Log as Learned" }
+
     var freezeButtonTitle: String {
         learning.todayStatus == .freezed ? "Freezed for a day" : "Freeze for a day"
     }
-    var freezesText: String { "\(learning.freezesUsed) out of \(learning.freezeLimit) Freezes used" }
+
+    var freezesText: String {
+        "\(learning.freezesUsed) out of \(learning.freezeLimit) Freezes used"
+    }
 
     func logAsLearned() { learning.logAsLearned() }
-    func freezeDay() { learning.freezeDay() }
+
+    // MARK: - تنبيه التجميد
+
+    var freezeAlertMessage: String {
+        let left = learning.freezeLimit - learning.freezesUsed
+        let word = left == 1 ? "freeze" : "freezes"
+        return "Your streak stays safe. This uses 1 of your \(left) remaining \(word)."
+    }
+
+    func askToFreeze() { isConfirmingFreeze = true }
+    func cancelFreeze() { isConfirmingFreeze = false }
+
+    func confirmFreeze() {
+        learning.freezeDay()
+        isConfirmingFreeze = false
+    }
+
+    // MARK: - تنبيه إكمال التعلّم (Streak lost)
+
+    func askToContinue() { isConfirmingContinue = true }
+    func closeContinueAlert() { isConfirmingContinue = false }
+
+    func continueLearning() {
+        learning.continueLearning()
+        isConfirmingContinue = false
+    }
+
+    func giveUp() {
+        learning.giveUp()
+        isConfirmingContinue = false
+    }
 
     // MARK: - نهاية الهدف
 

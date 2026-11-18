@@ -4,6 +4,7 @@ import SwiftUI
 struct ActivityView: View {
     @State private var viewModel: ActivityViewModel
 
+    // ننشئ الـ ViewModel مرة وحدة بس للشاشة
     init(learning: LearningViewModel) {
         _viewModel = State(initialValue: ActivityViewModel(learning: learning))
     }
@@ -12,11 +13,7 @@ struct ActivityView: View {
         VStack(spacing: 16) {
             header
             weekStrip
-
-            HStack(spacing: 13) {
-                StatCard(icon: "flame.fill", color: .appOrange, value: viewModel.learnedText, title: "Learned")
-                StatCard(icon: "snowflake", color: .appCyan, value: viewModel.freezedText, title: "Freezed")
-            }
+            cards
 
             if viewModel.goalState == .active {
                 logActions
@@ -26,33 +23,33 @@ struct ActivityView: View {
         }
         .padding(.horizontal)
         .toolbar(.hidden, for: .navigationBar)
+        .overlay { alerts }
+        .animation(.spring(duration: 0.3), value: viewModel.isConfirmingFreeze)
+        .animation(.spring(duration: 0.3), value: viewModel.isConfirmingContinue)
     }
 
     // MARK: - العنوان
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(spacing: 12) {
+                CircleButton(icon: "chevron.left", action: viewModel.backToStart)
+
                 Text("Activity")
                     .font(.system(size: 34, weight: .bold))
+
                 Spacer()
+
                 CircleLink(icon: "calendar", route: .calendar)
                 CircleLink(icon: "pencil.and.outline", route: .goal)
             }
 
-            HStack {
-                Text(viewModel.dateTitle)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Previous week", systemImage: "chevron.left", action: viewModel.previousWeek)
-                Button("Next week", systemImage: "chevron.right", action: viewModel.nextWeek)
-            }
-            .labelStyle(.iconOnly)
-            .tint(.blue)
+            Text(viewModel.dateTitle)
+                .foregroundStyle(.secondary)
         }
     }
 
-    // MARK: - الأسبوع
+    // MARK: - الأسبوع الحالي
 
     private var weekStrip: some View {
         HStack(spacing: 0) {
@@ -67,27 +64,43 @@ struct ActivityView: View {
         }
     }
 
+    // MARK: - البطاقات
+
+    private var cards: some View {
+        HStack(spacing: 13) {
+            if viewModel.isStreakLost {
+                LostStreakCard(onRefresh: viewModel.askToContinue)
+            } else {
+                StatCard(icon: "flame.fill", color: .appOrange,
+                         value: viewModel.learnedText, title: "Learned")
+            }
+            StatCard(icon: "snowflake", color: .appCyan,
+                     value: viewModel.freezedText, title: "Freezed")
+        }
+    }
+
     // MARK: - Task 2: الأزرار
 
     private var logActions: some View {
         VStack {
             Spacer()
 
+            // الدائرة الكبيرة: برتقالية لما تكون مفعّلة، غامقة لما تتعطل
             Button(action: viewModel.logAsLearned) {
                 Text(viewModel.logButtonTitle)
                     .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(viewModel.isLearnedToday ? .secondary : .primary)
+                    .foregroundStyle(viewModel.canLogLearned ? .primary : .secondary)
                     .frame(width: 274, height: 274)
             }
             .buttonStyle(.plain)
-            .glassEffect(.regular.tint(viewModel.isLearnedToday ? Color(white: 0.12) : .appOrange).interactive(),
+            .glassEffect(.regular.tint(viewModel.canLogLearned ? .appOrange : Color(white: 0.12)).interactive(),
                          in: .circle)
             .disabled(!viewModel.canLogLearned)
 
             Spacer()
 
             VStack(spacing: 16) {
-                Button(action: viewModel.freezeDay) {
+                Button(action: viewModel.askToFreeze) {
                     Text(viewModel.freezeButtonTitle)
                         .foregroundStyle(viewModel.canFreeze ? .white : .secondary)
                         .frame(width: 274, height: 48)
@@ -134,58 +147,30 @@ struct ActivityView: View {
             Spacer()
         }
     }
-}
 
-// MARK: - قطع صغيرة
+    // MARK: - التنبيهات
 
-struct CircleLink: View {
-    let icon: String
-    let route: Route
-
-    var body: some View {
-        NavigationLink(value: route) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
+    @ViewBuilder
+    private var alerts: some View {
+        if viewModel.isConfirmingFreeze {
+            ConfirmAlert(title: "Freeze today?",
+                         message: viewModel.freezeAlertMessage,
+                         cancelTitle: "Cancel",
+                         confirmTitle: "Freeze",
+                         confirmColor: .appCyan,
+                         onCancel: viewModel.cancelFreeze,
+                         onConfirm: viewModel.confirmFreeze)
         }
-        .glassEffect(.regular.interactive(), in: .circle)
-    }
-}
 
-struct StatCard: View {
-    let icon: String
-    let color: Color
-    let value: String
-    let title: String
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(color)
-            Text(value)
-                .font(.headline)
-            Text(title)
-                .font(.caption)
+        if viewModel.isConfirmingContinue {
+            ConfirmAlert(title: "Continue learning?",
+                         message: "Your streak starts over, but your learned days are saved. Missed days count against your goal.",
+                         cancelTitle: "Not now",
+                         confirmTitle: "Continue",
+                         confirmColor: .appOrange,
+                         onCancel: viewModel.giveUp,
+                         onConfirm: viewModel.continueLearning,
+                         onBackgroundTap: viewModel.closeContinueAlert)
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 100)
-        .glassEffect(in: .rect(cornerRadius: 34))
-    }
-}
-
-/// دائرة اليوم — تُستخدم هنا وفي التقويم (بدون تفاعل)
-struct DayCircle: View {
-    let day: Date
-    let style: DayStyle
-    let size: CGFloat
-
-    var body: some View {
-        Text(day.dayNumber)
-            .font(.system(size: size * 0.45, weight: style == .today ? .bold : .medium))
-            .foregroundStyle(style.textColor)
-            .frame(width: size, height: size)
-            .background(Circle().fill(style.background))
     }
 }
